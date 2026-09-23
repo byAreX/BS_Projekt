@@ -1,0 +1,98 @@
+# DriveSphere native Plymouth theme. No browser and no fixed boot duration.
+# The original transparent logo is copied by install-plymouth.sh.
+Window.SetBackgroundTopColor(0.031, 0.055, 0.09);
+Window.SetBackgroundBottomColor(0.031, 0.055, 0.09);
+
+width = Window.GetWidth();
+height = Window.GetHeight();
+left = Window.GetX();
+top = Window.GetY();
+logo_source = Image("drivesphere.png");
+logo_width = Math.Int(width * 0.70);
+logo_height = Math.Int(logo_width * logo_source.GetHeight() / logo_source.GetWidth());
+logo = Sprite(logo_source.Scale(logo_width, logo_height));
+logo.SetPosition(left + (width - logo_width) / 2, top + height * 0.17, 1);
+
+tagline_image = Image.Text("R I D E   C O N N E C T E D .", 0.70, 0.78, 0.88);
+tagline = Sprite(tagline_image);
+tagline.SetPosition(left + (width - tagline_image.GetWidth()) / 2, top + height * 0.62, 1);
+
+bar_width = Math.Int(width * 0.19);
+bar_height = 3;
+bar_x = left + (width - bar_width) / 2;
+bar_y = top + height * 0.73;
+track = Sprite(Image("track.png").Scale(bar_width, bar_height));
+track.SetPosition(bar_x, bar_y, 1);
+bar_source = Image("accent.png");
+bar = Sprite(bar_source.Scale(1, bar_height));
+bar.SetPosition(bar_x, bar_y, 2);
+
+caption_image = Image.Text("Linux startet ...", 0.49, 0.56, 0.66);
+if (Plymouth.GetMode() == "shutdown")
+  caption_image = Image.Text("DriveSphere wird ausgeschaltet ...", 0.49, 0.56, 0.66);
+caption = Sprite(caption_image);
+caption.SetPosition(left + (width - caption_image.GetWidth()) / 2, bar_y + 18, 1);
+
+# Plymouth reports an estimated system boot progress, not elapsed animation time.
+fun boot_progress(duration, progress)
+{
+  local.pixels = Math.Int(bar_width * progress);
+  if (pixels < 1) pixels = 1;
+  if (pixels > bar_width) pixels = bar_width;
+  bar.SetImage(bar_source.Scale(pixels, bar_height));
+}
+Plymouth.SetBootProgressFunction(boot_progress);
+
+# A subtle pulse remains active even while boot progress is unchanged.
+pulse = 0;
+fun refresh()
+{
+  global.pulse += 0.05;
+  bar.SetOpacity(0.70 + 0.30 * (Math.Sin(pulse) + 1) / 2);
+}
+Plymouth.SetRefreshFunction(refresh);
+
+# Keep system questions and password requests visible; never display a password.
+prompt_sprite = Sprite();
+prompt_sprite.SetPosition(left + 24, top + height * 0.84, 10);
+entry_sprite = Sprite();
+entry_sprite.SetPosition(left + 24, top + height * 0.90, 10);
+
+fun display_normal()
+{
+  prompt_sprite.SetOpacity(0);
+  entry_sprite.SetOpacity(0);
+}
+fun display_password(prompt, bullets)
+{
+  prompt_sprite.SetImage(Image.Text(prompt, 0.90, 0.94, 1));
+  prompt_sprite.SetOpacity(1);
+  local.mask = "";
+  for (local.i = 0; i < bullets; i++) mask += "*";
+  entry_sprite.SetImage(Image.Text(mask, 0.32, 0.68, 1));
+  entry_sprite.SetOpacity(1);
+}
+fun display_question(prompt, entry)
+{
+  prompt_sprite.SetImage(Image.Text(prompt, 0.90, 0.94, 1));
+  prompt_sprite.SetOpacity(1);
+  entry_sprite.SetImage(Image.Text(entry, 0.90, 0.94, 1));
+  entry_sprite.SetOpacity(1);
+}
+Plymouth.SetDisplayNormalFunction(display_normal);
+Plymouth.SetDisplayPasswordFunction(display_password);
+Plymouth.SetDisplayQuestionFunction(display_question);
+
+message = Sprite();
+message.SetPosition(left + 24, top + 14, 10);
+fun display_message(text)
+{
+  message.SetImage(Image.Text(text, 0.90, 0.94, 1));
+  message.SetOpacity(1);
+}
+fun hide_message(text)
+{
+  message.SetOpacity(0);
+}
+Plymouth.SetDisplayMessageFunction(display_message);
+Plymouth.SetHideMessageFunction(hide_message);

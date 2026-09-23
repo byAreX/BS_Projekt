@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=DriveSphere
+Description=DriveSphere motorcycle Linux boot splash
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/drivesphere
+ScriptFile=/usr/share/plymouth/themes/drivesphere/drivesphere.script
