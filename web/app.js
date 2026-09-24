@@ -33,16 +33,17 @@ function screen(name) {
   const focus = $(name).querySelector('button');
   if ($('boot').hidden) focus?.focus({preventScroll:true});
 }
-function endBoot() { clearTimeout(bootTimer); $('boot').hidden = true; document.querySelector('.screen:not([hidden]) button')?.focus({preventScroll:true}); }
 function boot() {
   screen('home'); $('boot').hidden = false;
   [...$('display').children].forEach(el => { if (el.id !== 'boot') el.inert = true; });
-  const track = document.querySelector('.boot-track span'); track.style.animation = 'none'; void track.offsetWidth; track.style.animation = '';
-  $('skip-boot').focus(); clearTimeout(bootTimer); bootTimer = setTimeout(finishBoot, matchMedia('(prefers-reduced-motion: reduce)').matches ? 400 : 3400);
+  bootTimer = setTimeout(finishBoot, matchMedia('(prefers-reduced-motion: reduce)').matches ? 400 : 3400);
 }
-function finishBoot() { [...$('display').children].forEach(el => el.inert = false); endBoot(); }
-$('skip-boot').onclick = finishBoot;
-$('replay').onclick = $('system-replay').onclick = boot;
+function finishBoot() {
+  clearTimeout(bootTimer);
+  [...$('display').children].forEach(el => el.inert = false);
+  $('boot').hidden = true;
+  document.querySelector('.screen:not([hidden]) button')?.focus({preventScroll:true});
+}
 document.querySelector('.brand').onclick = e => { e.preventDefault(); screen('home'); };
 document.querySelectorAll('.back').forEach(b => b.onclick = () => screen('home'));
 $('open-settings').onclick = () => screen('settings');
@@ -53,7 +54,7 @@ document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
 });
 document.querySelectorAll('[data-theme]').forEach(b => b.onclick = () => { prefs.theme = b.dataset.theme; applyPrefs(); });
 $('brightness').oninput = e => { prefs.brightness = Number(e.target.value); applyPrefs(); };
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('boot').hidden) finishBoot(); else screen('home'); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('boot').hidden) screen('home'); });
 function tick() { $('clock').textContent = new Date().toLocaleTimeString('de-AT', {hour:'2-digit', minute:'2-digit'}); }
 tick(); setInterval(tick, 1000);
 async function api(path, data) {

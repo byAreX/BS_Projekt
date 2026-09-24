@@ -1,6 +1,26 @@
-# DriveSphere · Motorrad-Startmenü
+# DriveSphere · Motorrad-Startmenü für Raspberry Pi
 
-Bedienbare Oberfläche für ein 800 × 480 Pixel großes Touchdisplay am Raspberry Pi 4. Verwendet das bereitgestellte Original-Logo. Die Browservorschau benötigt keine externen Schriftarten, CDNs oder Laufzeitpakete. Für die dauerhafte Touch-Home-Taste auf dem Pi werden GTK und Layer Shell benötigt.
+Bedienbare Oberfläche für ein 800 × 480 Pixel großes Touchdisplay auf Raspberry Pi OS. Der Pi startet das Menü als Chromium-Kiosk; Bluetooth und Audio werden lokal gesteuert. LIVI liefert CarPlay. Für eine dauerhafte Home-Taste über LIVI werden GTK und Layer Shell benötigt.
+
+## Installation auf Pi 5 mit Raspberry Pi OS Lite Trixie
+
+`scripts/install.sh` installiert in einem Lauf die offizielle Raspberry-Pi-Wayland-Desktopbasis, die Menü-Abhängigkeiten, Plymouth und die aktuelle LIVI-Release. Es richtet Desktop-Autologin und den DriveSphere-Kiosk-Autostart ein, speichert LIVI als CarPlay-Anwendung und deaktiviert LIVIs eigenen Autostart. Dafür benötigt der Pi Internet; `sudo` fragt gegebenenfalls einmal nach deinem Passwort. Vorher wichtige Änderungen auf dem Pi sichern.
+
+Diesen Projektordner auf den Pi kopieren, zum Beispiel nach `~/DriveSphere`. Dann als normaler Pi-Benutzer ausführen:
+
+```sh
+cd ~/DriveSphere
+bash scripts/install.sh
+sudo reboot
+```
+
+Der Standardlauf ist für deinen CarPlay-Dongle vorgesehen. Er aktiviert **keine MFi-I²C-Verdrahtung**, keinen LIVI-Bootsplash und keine spezielle RGB/VGA-Pixelwiederholung. Falls später stattdessen ein am GPIO angeschlossener MFi-Coprozessor verwendet wird, lässt sich `bash scripts/install.sh --mfi` nutzen. Die Displayauflösung von 800 × 480 muss für das konkrete Display eingestellt werden; das Skript verändert keine unbekannten HDMI-Timings.
+
+Das Skript lädt den auf einen festen Commit gesetzten [offiziellen LIVI-Installer](https://github.com/f-io/LIVI#installation) und installiert damit dessen aktuelle Release im Desktop-Modus. LIVI wird unter `~/LIVI/LIVI.AppImage` abgelegt. Ist die Datei bei einem erneuten Lauf bereits ausführbar, wird der LIVI-Download übersprungen. Die tatsächliche CarPlay-Verbindung hängt weiterhin von der Unterstützung deines Dongles und dem iPhone ab und muss am Pi getestet werden.
+
+Nach dem Neustart zeigt [Plymouth](boot/README.md) beim Linux-Start den Fortschrittsbalken. Chromium öffnet danach direkt das Menü ohne zweite Animation. Unter **Einstellungen → System** die Prüfungen ansehen. Bluetooth-Kopplung, Audioausgabe, CarPlay und die Home-Taste mit den echten Geräten testen. Mit `Alt+F4` lässt sich der Kiosk für Wartung schließen; `bash scripts/kiosk.sh` startet ihn wieder.
+
+Falls LIVI an einem anderen Ort installiert ist, `python3 scripts/configure-carplay.py -- /absoluter/pfad/zur/anwendung [argumente...]` verwenden und einen eigenen LIVI-Autostart deaktivieren. DriveSphere erwartet einen Vordergrundprozess; ein Wrapper-Skript muss die Anwendung mit `exec` starten.
 
 ## Vorschau am Computer
 
@@ -8,7 +28,7 @@ Bedienbare Oberfläche für ein 800 × 480 Pixel großes Touchdisplay am Raspber
 python3 server.py
 ```
 
-Dann **http://127.0.0.1:8765** öffnen. Die Bootanimation läuft etwa 3,4 Sekunden und wechselt zum Startmenü. Mit „Bootanimation“ lässt sie sich erneut zeigen. `Esc` führt zurück; Tastatur und Touch werden unterstützt. Die Vorschau verbindet keine Geräte und startet kein CarPlay. Nacht-/Tagansicht und Oberflächendimmung funktionieren und werden im Browser gespeichert.
+Dann **http://127.0.0.1:8765** öffnen. Die Bootanimation läuft etwa 3,4 Sekunden und wechselt automatisch zum Startmenü. Sie hat keine Überspringen- oder Wiederholen-Taste. `Esc` führt aus Unterseiten zurück; Tastatur und Touch werden unterstützt. Die Vorschau verbindet keine Geräte und startet kein CarPlay. Nacht-/Tagansicht und Oberflächendimmung funktionieren und werden im Browser gespeichert.
 
 Wenn macOS beim System-Python die Xcode-Lizenz verlangt, kann eine vorhandene Command-Line-Tools-Python-Installation verwendet werden:
 
@@ -28,55 +48,11 @@ Raspberry Pi einschalten
       └─ Einstellungen → Bluetooth / Audio / Display / System
 ```
 
-Die Browseranimation ist ein Anwendungssplash nach dem Desktopstart. Zusätzlich liegt jetzt ein **natives Plymouth-Theme für euren Linux-Start auf Raspberry Pi OS Trixie** bei: [Einrichtung des Linux-Bootscreens](boot/README.md). Nach dessen Installation überspringt der Kiosk die Browseranimation und öffnet direkt das Hauptmenü. Die normale Mac-Vorschau behält ihre Animation. Ein lückenloser Übergang ab der Firmwarephase ist damit noch nicht zugesichert und muss am Pi geprüft werden.
+Die Browseranimation dient nur der Vorschau ohne Plymouth. Auf dem Pi übernimmt das [native Plymouth-Theme](boot/README.md) den Ladebalken während des Linux-Starts. Es zeigt Plymouths geschätzten Bootfortschritt; die grafische Sitzung und Chromium können danach noch kurz laden.
 
-## Raspberry Pi einrichten
+## Betrieb und Wartung
 
-Voraussetzung: Raspberry Pi OS **64 Bit mit Desktop und labwc**, Display im Querformat auf **800 × 480**, funktionierende USB-Toucheingabe. Desktop-Autologin in den Pi-Einstellungen aktivieren. Die Bildschirmauflösung über die Displayeinstellungen bzw. die Anleitung des konkreten HDMI-Displays einstellen; hier werden keine unbekannten HDMI-Timings geschrieben.
-
-1. Diesen Ordner auf den Pi kopieren, beispielsweise nach `~/DriveSphere`.
-2. Benötigte Pakete im Terminal installieren:
-
-   ```sh
-   sudo apt update
-   sudo apt install python3 chromium curl bluez blueman pipewire wireplumber libspa-0.2-bluetooth pavucontrol python3-gi gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1
-   ```
-
-   PipeWire und WirePlumber müssen in der angemeldeten Desktop-Sitzung laufen. Bestehende Audioinstallationen zunächst prüfen, nicht parallel mehrere Audioserver einrichten.
-
-3. LIVI separat installieren und mit eurem iPhone und dem **konkreten Dongle-Modell** testen. Die bereitgestellte Projektdatei nennt LIVI und Carlinkit, legt aber keine LIVI-Version und kein eindeutig verifiziertes Dongle-Modell fest. Die aktuelle [LIVI-Dokumentation](https://github.com/f-io/LIVI) beschreibt inzwischen auch native CarPlay-Verbindungen mit MFi-Authentifizierung. Prüft deshalb vor der Installation, ob eure Version den gewählten Dongle tatsächlich unterstützt. Dieses Projekt installiert oder emuliert CarPlay nicht.
-4. Konfiguration anlegen:
-
-   ```sh
-   cd ~/DriveSphere
-   cp config.example.json config.json
-   ```
-
-   In `config.json` den **bei euch getesteten ausführbaren Startbefehl** hinterlegen, als JSON-Liste mit einem Argument pro Eintrag. Beispiel mit einem selbst angelegten Startskript:
-
-   ```json
-   { "carplay_command": ["/home/DEIN_BENUTZER/bin/start-livi"] }
-   ```
-
-   Platzhalter ersetzen. Ein Startskript muss ausführbar sein, die nötige Arbeitsumgebung setzen und die Anwendung am Ende mit `exec` im Vordergrund ausführen. Kein `&`, kein bereits laufender LIVI-Autostart: DriveSphere verwaltet den gestarteten Prozess. Keine Shell-Befehle oder `~` in die JSON-Liste schreiben. Ohne Konfiguration bleibt die Starttaste deaktiviert.
-
-5. Im Pi-Desktop testen:
-
-   ```sh
-   bash scripts/kiosk.sh
-   ```
-
-   Unter **Einstellungen → System** zeigt der Systemcheck, ob CarPlay-Startbefehl, Bluetooth, Audio und Touch-Home bereit sind. CarPlay wird nur gestartet, wenn die Touch-Home-Abhängigkeiten in der Wayland-Sitzung verfügbar sind. In der laufenden CarPlay-Anwendung erscheint unten rechts eine **Home-Taste** (116 × 58 Pixel). Sie beendet den von DriveSphere gestarteten Vordergrundprozess und führt zum Menü zurück. Teste Position und Sichtbarkeit mit genau deiner LIVI-Version auf dem Pi.
-
-6. Erst nach erfolgreichem Test den Autostart eintragen:
-
-   ```sh
-   python3 scripts/install-autostart.py
-   ```
-
-   Das Skript ergänzt `~/.config/labwc/autostart` und sichert eine vorhandene Datei. Es verändert keine Systemdienste. Beim nächsten Anmelden/Booten startet das Menü. Andere Desktopumgebungen benötigen ihren eigenen Autostartmechanismus. Grundlage: [offizielle Raspberry-Pi-Kioskanleitung](https://www.raspberrypi.com/tutorials/how-to-use-a-raspberry-pi-in-kiosk-mode/).
-
-Mit `Alt+F4` lässt sich das Kioskfenster für Wartung schließen. DriveSphere läuft als normaler Desktopbenutzer, **nicht als root**, und lauscht ausschließlich auf `127.0.0.1`. Schreibende API-Aufrufe prüfen Origin und ein Sitzungstoken. Das Menü benötigt kein Internet.
+DriveSphere läuft als normaler Desktopbenutzer und lauscht nur auf `127.0.0.1`. Schreibende API-Aufrufe prüfen Origin und ein Sitzungstoken. Die Oberfläche benötigt im Betrieb kein Internet. Der Autostart wird unter `~/.config/labwc/autostart` eingetragen; beim ersten Einrichten wird eine vorhandene Datei als `autostart.before-drivesphere` gesichert. `config.json` bleibt bei erneuter Installation erhalten. Die App nutzt weder root für den Kiosk noch einen öffentlichen Webserver.
 
 ## Bluetooth, Cardo und Musik
 
@@ -97,6 +73,6 @@ python3 -m unittest discover -s tests -v
 
 Browserprüfung optional mit Playwright: `python3 -m pip install playwright`, `python3 -m playwright install chromium`, dann bei laufendem Menüserver `python3 tests/browser_check.py`. Screenshots werden unter `artifacts/` gespeichert.
 
-Enthalten: Bootanimation, Hauptmenü, Einstellungen, lokale Hardwareanbindung und Autostartvorbereitung. Hardwareabhängige Funktionen sind ohne Pi, Bluetooth-Adapter, Display, iPhone und LIVI nicht end-to-end geprüft. Verkaufswebsite, Stromversorgung und Gehäuse sind laut Projektdatei separate Aufgaben und nicht Bestandteil dieses Menüs.
+Enthalten: Bootanimation, Hauptmenü, Einstellungen, lokale Hardwareanbindung und Installationsskripte für Pi OS Lite Trixie. Hardwareabhängige Funktionen sind ohne Pi, Bluetooth-Adapter, Display, iPhone und LIVI nicht end-to-end geprüft. Verkaufswebsite, Stromversorgung und Gehäuse sind laut Projektdatei separate Aufgaben und nicht Bestandteil dieses Menüs.
 
 Vor Abnahme am Pi prüfen: Kaltstart und Anzeige bei 800 × 480, Lesbarkeit und Touchziele, Systemcheck, Headset koppeln und erneut verbinden, Audioausgabe nach Neustart, CarPlay starten und mit der eingeblendeten Home-Taste zurückkehren, Musik/Navigation/Telefonie. Die originale Logodatei liegt unverändert unter `web/assets/drivesphere.png`.

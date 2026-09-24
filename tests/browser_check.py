@@ -12,6 +12,7 @@ with sync_playwright() as p:
     page.goto('http://127.0.0.1:8765')
     page.wait_for_timeout(1200)
     page.screenshot(path=str(output / 'boot.png'))
+    assert page.locator('#skip-boot, #replay, #system-replay').count() == 0
     expect(page.locator('#boot')).to_be_hidden(timeout=5000)
     expect(page.locator('#mode')).to_have_text('VORSCHAU')
     page.screenshot(path=str(output / 'home.png'))
@@ -23,7 +24,7 @@ with sync_playwright() as p:
     expect(page.locator('#display')).to_have_class('light')
     page.reload()
     expect(page.locator('#display')).to_have_class('light')
-    page.locator('#skip-boot').click()
+    expect(page.locator('#boot')).to_be_hidden(timeout=5000)
     page.locator('#open-settings').click()
     page.locator('[data-tab="display"]').click()
     page.screenshot(path=str(output / 'display.png'))
@@ -32,9 +33,6 @@ with sync_playwright() as p:
     page.locator('#open-carplay').click()
     expect(page.locator('#launch')).to_be_disabled()
     page.keyboard.press('Escape')
-    page.locator('#replay').click()
-    expect(page.locator('#boot')).to_be_visible()
-    page.locator('#skip-boot').click()
     page.goto('http://127.0.0.1:8765/?boot=skip')
     expect(page.locator('#boot')).to_be_hidden()
     expect(page.locator('#home')).to_be_visible()
@@ -42,13 +40,10 @@ with sync_playwright() as p:
     page.locator('#open-settings').click()
     expect(page.locator('#settings')).to_be_visible()
     page.keyboard.press('Escape')
-    page.locator('#replay').click()
-    expect(page.locator('#boot')).to_be_visible()
-    page.locator('#skip-boot').click()
     for width, height in [(800,480),(1000,600),(390,844)]:
         page.set_viewport_size({'width':width,'height':height})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         assert page.locator('#open-settings').bounding_box()['height'] >= 44
     assert not errors, errors
     browser.close()
-    print('Browser checks passed: boot, menu, settings, persistence, preview, native-boot handoff, responsive layout.')
+    print('Browser checks passed: automatic boot, menu, settings, persistence, preview, native-boot handoff, responsive layout.')
