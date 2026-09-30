@@ -7,7 +7,7 @@ usage() {
   cat <<'EOF'
 Aufruf: bash scripts/install.sh [--mfi]
 
-Installiert Desktop, DriveSphere und die aktuelle LIVI-Release ohne Rückfragen.
+Installiert Desktop, DriveSphere und LIVI 8.3.0 (letzte Version mit Dongle-Unterstützung) ohne Rückfragen.
 --mfi aktiviert LIVIs I²C-Einrichtung für einen angeschlossenen MFi-Coprozessor.
 Ohne --mfi bleibt diese Einrichtung aus (z. B. bei einem CarPlay-Dongle).
 EOF
@@ -49,19 +49,22 @@ if ! command -v labwc >/dev/null; then
   exit 1
 fi
 
-if [[ ! -x "$HOME/LIVI/LIVI.AppImage" || "$livi_mfi" == yes ]]; then
-  # Pin installer code; the AppImage itself comes from LIVI's latest release.
-  livi_revision=3ac92d6671810c75ee8df746aa87c40c0905c4b2
+# LIVI 9 dropped the vendor-firmware path that USB CarPlay dongles need, so stay on 8.3.0.
+livi_version=8.3.0
+livi_marker="$HOME/LIVI/.drivesphere-version"
+if [[ ! -x "$HOME/LIVI/LIVI.AppImage" || "$(cat "$livi_marker" 2>/dev/null)" != "$livi_version" || "$livi_mfi" == yes ]]; then
   installer="$(mktemp)"
   trap 'rm -f "$installer"' EXIT
   curl --fail --location --proto '=https' --tlsv1.2 \
-    "https://raw.githubusercontent.com/f-io/LIVI/$livi_revision/scripts/install/install.sh" \
+    "https://raw.githubusercontent.com/f-io/LIVI/v$livi_version/scripts/install/desktop/install.sh" \
     --output "$installer"
-  LIVI_INSTALLER_BRANCH="$livi_revision" LIVI_CHANNEL=release \
+  LIVI_INSTALLER_BRANCH="v$livi_version" \
     LIVI_MFI="$livi_mfi" LIVI_SPLASH=no LIVI_HDMI_PR=no \
-    bash "$installer" --desktop
+    bash "$installer" \
+    "https://github.com/f-io/LIVI/releases/download/v$livi_version/LIVI-$livi_version-linux-arm64.AppImage"
+  echo "$livi_version" > "$livi_marker"
 else
-  echo 'LIVI-AppImage bereits vorhanden; Download übersprungen.'
+  echo "LIVI $livi_version bereits vorhanden; Download übersprungen."
 fi
 
 bash scripts/finish-livi.sh

@@ -13,7 +13,7 @@ document.querySelectorAll('[data-icon]').forEach(el => {
   el.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${icons[el.dataset.icon]}"></path></svg>`;
 });
 const $ = id => document.getElementById(id);
-let state = null, bootTimer, toastTimer, refreshing = false;
+let state = null, bootTimer, toastTimer, refreshing = false, pin = '', removing = null;
 let prefs = {theme:'dark', brightness:100};
 try { prefs = {...prefs, ...JSON.parse(localStorage.getItem('drivesphere') || '{}')}; } catch {}
 function applyPrefs() {
@@ -45,7 +45,7 @@ function finishBoot() {
   document.querySelector('.screen:not([hidden]) button')?.focus({preventScroll:true});
 }
 document.querySelector('.brand').onclick = e => { e.preventDefault(); screen('home'); };
-document.querySelectorAll('.back').forEach(b => b.onclick = () => screen('home'));
+document.querySelectorAll('.back').forEach(b => b.onclick = () => screen(b.dataset.back || 'home'));
 $('open-settings').onclick = () => screen('settings');
 $('open-carplay').onclick = () => { screen('carplay'); refresh(); };
 document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
@@ -54,7 +54,7 @@ document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
 });
 document.querySelectorAll('[data-theme]').forEach(b => b.onclick = () => { prefs.theme = b.dataset.theme; applyPrefs(); });
 $('brightness').oninput = e => { prefs.brightness = Number(e.target.value); applyPrefs(); };
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('boot').hidden) screen('home'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('boot').hidden && $('pair-dialog').hidden) screen(document.querySelector('.screen:not([hidden]) .back')?.dataset.back || 'home'); });
 function tick() { $('clock').textContent = new Date().toLocaleTimeString('de-AT', {hour:'2-digit', minute:'2-digit'}); }
 tick(); setInterval(tick, 1000);
 async function api(path, data) {
@@ -70,7 +70,8 @@ function render() {
   $('launch').disabled = state.preview || !state.carplay.configured || !state.carplay.touch_home || state.carplay.running;
   $('launch').firstChild.textContent = state.carplay.running ? 'CarPlay läuft ' : 'CarPlay starten ';
   $('stop-carplay').hidden = !state.carplay.running;
-  $('pair').disabled = !state.bluetooth.manager;
+  $('pair').disabled = state.preview || !!state.bluetooth.error;
+  $('pair-advanced').disabled = !state.bluetooth.manager;
   $('audio-manager').disabled = !state.audio.manager;
   $('volume').disabled = state.audio.volume === null;
   if (document.activeElement !== $('volume') && state.audio.volume !== null) $('volume').value = state.audio.volume;
@@ -98,8 +99,63 @@ function render() {
     const label = document.createElement('span'); label.textContent = device.name;
     const sub = document.createElement('small'); sub.textContent = device.connected ? 'Verbunden' : 'Gekoppelt'; label.append(sub);
     const button = document.createElement('button'); button.textContent = device.connected ? 'Trennen' : 'Verbinden'; button.onclick = () => action(button, 'bluetooth', {address:device.address, connect:!device.connected});
-    row.append(label,button); devices.append(row);
+    const remove = document.createElement('button'); remove.className = 'remove';
+    remove.textContent = removing === device.address ? 'Wirklich?' : 'Entfernen';
+    remove.onclick = () => {
+      if (removing !== device.address) { removing = device.address; remove.textContent = 'Wirklich?'; setTimeout(() => { if (removing === device.address) { removing = null; remove.textContent = 'Entfernen'; } }, 4000); return; }
+      removing = null; action(remove, 'bluetooth/remove', {address:device.address});
+    };
+    const buttons = document.createElement('span'); buttons.className = 'device-actions'; buttons.append(button, remove);
+    row.append(label,buttons); devices.append(row);
   });
+  renderPairing();
+}
+function renderPairing() {
+  const bt = state.bluetooth, busy = bt.pairing && !['done','failed'].includes(bt.pairing.step);
+  $('radar').classList.toggle('active', bt.scanning);
+  $('scan').disabled = bt.scanning || busy;
+  $('scan-status').textContent = state.preview ? 'In der Vorschau wird nicht nach Geräten gesucht.' : bt.error ? bt.error : bt.scanning ? 'Suche nach Geräten in der Nähe …' : bt.nearby.length ? 'Gerät antippen, um es zu koppeln.' : 'Keine Geräte gefunden. Kopplungsmodus prüfen und erneut suchen.';
+  const list = $('nearby'); list.replaceChildren();
+  if (!bt.nearby.length) {
+    const p = document.createElement('p'); p.className = 'empty'; p.textContent = bt.scanning ? 'Geräte erscheinen hier, sobald sie gefunden werden.' : 'Noch keine Geräte in der Liste.'; list.append(p);
+  }
+  bt.nearby.forEach(device => {
+    const button = document.createElement('button'); button.className = 'nearby-device'; button.disabled = busy;
+    const icon = document.createElement('span'); icon.className = 'nearby-icon'; icon.dataset.icon = 'bluetooth';
+    icon.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${icons.bluetooth}"></path></svg>`;
+    const label = document.createElement('span'); label.className = 'nearby-name'; label.textContent = device.name;
+    const sub = document.createElement('small'); sub.textContent = device.address; label.append(sub);
+    const go = document.createElement('span'); go.className = 'nearby-go'; go.textContent = 'Koppeln';
+    button.append(icon, label, go);
+    button.onclick = () => { pin = ''; action(button, 'bluetooth/pair', {address:device.address}); };
+    list.append(button);
+  });
+  const session = bt.pairing, dialog = $('pair-dialog');
+  if (!session) { dialog.hidden = true; pin = ''; return; }
+  const wasHidden = dialog.hidden; dialog.hidden = false;
+  const texts = {
+    searching:['Gerät wird gesucht', `Suche ${session.name} …`],
+    pairing:['Kopplung läuft', `Verbinde mit ${session.name}. Bitte kurz warten.`],
+    confirm:['Code bestätigen', `Wird auf ${session.name} derselbe Code angezeigt?`],
+    display:['Code eingeben', `Gib diesen Code auf ${session.name} ein.`],
+    pin:['PIN eingeben', `${session.name} verlangt eine PIN. Häufig ist es 0000 oder 1234.`],
+    connecting:['Fast fertig', `Gekoppelt. ${session.name} wird verbunden …`],
+    done:['Gekoppelt', `${session.name}: ${session.message}`],
+    failed:['Kopplung fehlgeschlagen', session.message],
+  };
+  const [title, text] = texts[session.step] || texts.pairing;
+  $('pair-title').textContent = title; $('pair-text').textContent = text;
+  $('pair-spinner').hidden = !['searching','pairing','connecting'].includes(session.step);
+  dialog.dataset.step = session.step;
+  $('pin-pad').hidden = session.step !== 'pin';
+  $('pair-code').hidden = !['confirm','display','pin'].includes(session.step);
+  $('pair-code').textContent = session.step === 'pin' ? (pin || '····') : session.passkey || '';
+  $('pair-ok').hidden = !['confirm','pin','done','failed'].includes(session.step);
+  $('pair-ok').textContent = session.step === 'done' ? 'Fertig' : session.step === 'failed' ? 'Erneut versuchen' : session.step === 'pin' ? 'Koppeln' : 'Bestätigen';
+  $('pair-ok').disabled = session.step === 'pin' && !pin;
+  $('pair-cancel').textContent = ['done','failed'].includes(session.step) ? 'Schließen' : 'Abbrechen';
+  $('pair-cancel').hidden = session.step === 'done';
+  if (wasHidden) $('pair-cancel').focus({preventScroll:true});
 }
 async function refresh() {
   if (refreshing) return; refreshing = true;
@@ -115,7 +171,25 @@ async function action(button, endpoint, data = {}) {
 }
 $('refresh').onclick = refresh;
 $('check-refresh').onclick = refresh;
-$('pair').onclick = () => action($('pair'), 'pair');
+$('pair').onclick = () => { screen('bt-pair'); startScan(); };
+$('scan').onclick = startScan;
+$('pair-advanced').onclick = () => action($('pair-advanced'), 'pair');
+async function startScan() {
+  try { await api('bluetooth/scan', {}); } catch(e) { toast(e.message); }
+  await refresh();
+}
+$('pin-pad').onclick = e => {
+  const digit = e.target.closest('[data-digit]')?.dataset.digit; if (!digit) return;
+  pin = digit === 'clear' ? pin.slice(0, -1) : digit === '0000' ? '0000' : (pin + digit).slice(0, 16);
+  $('pair-code').textContent = pin || '····'; $('pair-ok').disabled = !pin;
+};
+$('pair-cancel').onclick = () => action($('pair-cancel'), 'bluetooth/cancel');
+$('pair-ok').onclick = async () => {
+  const session = state?.bluetooth.pairing; if (!session) return;
+  if (session.step === 'done') { await action($('pair-ok'), 'bluetooth/cancel'); screen('settings'); return; }
+  if (session.step === 'failed') { const address = session.address; pin = ''; await api('bluetooth/cancel', {}).catch(() => {}); return action($('pair-ok'), 'bluetooth/pair', {address}); }
+  action($('pair-ok'), 'bluetooth/answer', session.step === 'pin' ? {pin} : {});
+};
 $('audio-manager').onclick = () => action($('audio-manager'), 'audio-manager');
 $('launch').onclick = () => action($('launch'), 'carplay');
 $('stop-carplay').onclick = () => action($('stop-carplay'), 'carplay/stop');
@@ -127,3 +201,5 @@ if (new URLSearchParams(location.search).get('boot') === 'skip') {
   boot();
 }
 refresh(); setInterval(refresh, 10000);
+// Pairing progress needs faster updates than the rest of the menu.
+setInterval(() => { if (!$('bt-pair').hidden || !$('pair-dialog').hidden) refresh(); }, 1000);

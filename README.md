@@ -4,7 +4,7 @@ Bedienbare Oberfläche für ein 800 × 480 Pixel großes Touchdisplay auf Raspbe
 
 ## Installation auf Pi 5 mit Raspberry Pi OS Lite Trixie
 
-`scripts/install.sh` installiert in einem Lauf die offizielle Raspberry-Pi-Wayland-Desktopbasis, die Menü-Abhängigkeiten, Plymouth und die aktuelle LIVI-Release. Es richtet Desktop-Autologin und den DriveSphere-Kiosk-Autostart ein, speichert LIVI als CarPlay-Anwendung und deaktiviert LIVIs eigenen Autostart. Dafür benötigt der Pi Internet; `sudo` fragt gegebenenfalls einmal nach deinem Passwort. Vorher wichtige Änderungen auf dem Pi sichern.
+`scripts/install.sh` installiert in einem Lauf die offizielle Raspberry-Pi-Wayland-Desktopbasis, die Menü-Abhängigkeiten, Plymouth und LIVI 8.3.0. Es richtet Desktop-Autologin und den DriveSphere-Kiosk-Autostart ein, speichert LIVI als CarPlay-Anwendung und deaktiviert LIVIs eigenen Autostart. Dafür benötigt der Pi Internet; `sudo` fragt gegebenenfalls einmal nach deinem Passwort. Vorher wichtige Änderungen auf dem Pi sichern.
 
 Diesen Projektordner auf den Pi kopieren, zum Beispiel nach `~/DriveSphere`. Dann als normaler Pi-Benutzer ausführen:
 
@@ -16,7 +16,7 @@ sudo reboot
 
 Der Standardlauf ist für deinen CarPlay-Dongle vorgesehen. Er aktiviert **keine MFi-I²C-Verdrahtung**, keinen LIVI-Bootsplash und keine spezielle RGB/VGA-Pixelwiederholung. Falls später stattdessen ein am GPIO angeschlossener MFi-Coprozessor verwendet wird, lässt sich `bash scripts/install.sh --mfi` nutzen. Die Displayauflösung von 800 × 480 muss für das konkrete Display eingestellt werden; das Skript verändert keine unbekannten HDMI-Timings.
 
-Das Skript lädt den auf einen festen Commit gesetzten [offiziellen LIVI-Installer](https://github.com/f-io/LIVI#installation) und installiert damit dessen aktuelle Release im Desktop-Modus. LIVI wird unter `~/LIVI/LIVI.AppImage` abgelegt. Ist die Datei bei einem erneuten Lauf bereits ausführbar, wird der LIVI-Download übersprungen. Die tatsächliche CarPlay-Verbindung hängt weiterhin von der Unterstützung deines Dongles und dem iPhone ab und muss am Pi getestet werden.
+Das Skript lädt den [offiziellen LIVI-Installer](https://github.com/f-io/LIVI#installation) und die AppImage fest in Version **8.3.0** im Desktop-Modus. LIVI 9.0.0 hat die Unterstützung für die Hersteller-Firmware von USB-CarPlay-Dongles entfernt; ein Dongle müsste dafür erst auf „LIVI Link“ umgeflasht werden. LIVI wird unter `~/LIVI/LIVI.AppImage` abgelegt, die installierte Version in `~/LIVI/.drivesphere-version` vermerkt. Ist bei einem erneuten Lauf bereits 8.3.0 installiert, wird der Download übersprungen; jede andere Version wird ersetzt. Die tatsächliche CarPlay-Verbindung hängt weiterhin von der Unterstützung deines Dongles und dem iPhone ab und muss am Pi getestet werden.
 
 Nach dem Neustart zeigt [Plymouth](boot/README.md) beim Linux-Start den Fortschrittsbalken. Chromium öffnet danach direkt das Menü ohne zweite Animation. Unter **Einstellungen → System** die Prüfungen ansehen. Bluetooth-Kopplung, Audioausgabe, CarPlay und die Home-Taste mit den echten Geräten testen. Mit `Alt+F4` lässt sich der Kiosk für Wartung schließen; `bash scripts/kiosk.sh` startet ihn wieder.
 
@@ -56,8 +56,9 @@ DriveSphere läuft als normaler Desktopbenutzer und lauscht nur auf `127.0.0.1`.
 
 ## Bluetooth, Cardo und Musik
 
-- **Neues Gerät koppeln** öffnet die native Blueman-Verwaltung. Cardo in den Kopplungsmodus setzen, suchen, koppeln und bei Bedarf vertrauen. PIN-/Bestätigungsdialoge übernimmt Blueman. Danach das Fenster schließen. Die native Verwaltung ist noch nicht im großen DriveSphere-Touchdesign gestaltet.
-- Bereits gekoppelte Geräte erscheinen im Menü. **Verbinden / Trennen** verwendet BlueZ über `bluetoothctl`. Ein eingeschalteter, funktionierender Bluetooth-Adapter wird vorausgesetzt.
+- **Neues Gerät koppeln** öffnet einen eigenen Touch-Bildschirm. Cardo in den Kopplungsmodus setzen; der Pi sucht 20 Sekunden lang und listet gefundene Geräte. Antippen koppelt, vertraut und verbindet das Gerät. Verlangt es einen Code, zeigt DriveSphere ihn zum Bestätigen an oder bietet ein Ziffernfeld für die PIN. Die Kopplung steuert ein interaktives `bluetoothctl` über ein Pseudoterminal.
+- **Erweiterte Bluetooth-Verwaltung öffnen** startet weiterhin Blueman als Notlösung.
+- Bereits gekoppelte Geräte erscheinen im Menü. **Verbinden / Trennen** und **Entfernen** (zweimal tippen) verwenden BlueZ über `bluetoothctl`. Ein eingeschalteter, funktionierender Bluetooth-Adapter wird vorausgesetzt.
 - **Audioausgang wählen** öffnet `pavucontrol`. Das Headset als Standardausgabe und gegebenenfalls als Ausgabe der laufenden LIVI-Anwendung auswählen. Anschließend schließen.
 - Der Lautstärkeregler steuert den PipeWire-Standardausgang über `wpctl`. Er ist ohne Audiozugriff deaktiviert. Das Ändern der Lautstärke hebt eine vorhandene Stummschaltung auf.
 - Das iPhone wird über die eingerichtete CarPlay-Lösung verbunden. Die Headset-Kopplung allein stellt keine CarPlay-Verbindung her. Musik, Navigation und Anrufe müssen mit LIVI, iPhone und Cardo gemeinsam am Pi getestet werden.

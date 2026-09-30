@@ -5,14 +5,17 @@ from functools import lru_cache
 import json
 import os
 from pathlib import Path
+import pty
 import re
 import secrets
+import select
 import selectors
 import signal
 import shutil
 import subprocess
 import sys
 import threading
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = Path(__file__).resolve().parent
@@ -22,6 +25,12 @@ PREVIEW = True
 CONFIG = {}
 PROCESSES = {}
 LOCK = threading.Lock()
+BLUETOOTHCTL = 'bluetoothctl'
+ADDRESS = re.compile(r'(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}')
+SCAN_SECONDS = 20
+SCAN = None
+SCAN_STARTED = None
+PAIRING = None
 
 
 def command(args, timeout=8):
@@ -108,8 +117,205 @@ def stop_carplay():
         home.terminate()
 
 
+# bluetoothctl prints its agent prompts in colour and without a trailing newline.
+TERMINAL_NOISE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]|[\x01\x02\r]')
+PAIR_EVENTS = [
+    ('confirm', r'Confirm passkey (\d+)'),
+    ('accept', r'Accept pairing|Authorize service'),
+    ('pin', r'Enter (?:PIN code|passkey)'),
+    ('display', r'\[agent\] (?:Passkey|PIN code): (\d+)'),
+    ('paired', r'Pairing successful|AlreadyExists'),
+    ('canceled', r'Request canceled'),
+    ('failed', r'Failed to pair: \S+|Device \S+ not available'),
+]
+
+
+class PairingError(Exception):
+    pass
+
+
+def pairing_error(output):
+    if 'Authentication' in output:
+        return 'Kopplung abgelehnt. Code prüfen und erneut versuchen.'
+    if 'not available' in output or 'ConnectionAttempt' in output:
+        return 'Gerät nicht erreichbar. Kopplungsmodus am Gerät aktivieren und erneut versuchen.'
+    return 'Kopplung fehlgeschlagen. Bitte erneut versuchen.'
+
+
+class Pairing:
+    """Drives an interactive bluetoothctl so pairing codes can be answered in the menu."""
+
+    def __init__(self, address, name):
+        self.address, self.name = address, name
+        self.step, self.passkey, self.message = 'searching', None, ''
+        self.reply, self.cancelled, self.buffer = None, False, ''
+        self.master, terminal = pty.openpty()
+        try:
+            self.process = subprocess.Popen([BLUETOOTHCTL], stdin=terminal, stdout=terminal, stderr=terminal,
+                                            env={**os.environ, 'TERM': 'dumb'}, start_new_session=True)
+        except Exception:
+            os.close(self.master)
+            raise
+        finally:
+            os.close(terminal)
+        threading.Thread(target=self.run, daemon=True).start()
+
+    def state(self):
+        return dict(address=self.address, name=self.name, step=self.step,
+                    passkey=self.passkey, message=self.message)
+
+    def active(self):
+        return self.step not in ('done', 'failed')
+
+    def answer(self, pin=None):
+        if self.step == 'confirm':
+            self.reply = 'yes'
+        elif self.step == 'pin':
+            if not isinstance(pin, str) or not re.fullmatch(r'\d{1,16}', pin):
+                raise ValueError('Bitte einen Code aus Ziffern eingeben.')
+            self.reply = pin
+        else:
+            raise ValueError('Es wird gerade kein Code abgefragt.')
+
+    def cancel(self):
+        self.cancelled = True
+
+    def send(self, line):
+        os.write(self.master, (line + '\n').encode())
+
+    def expect(self, patterns, timeout):
+        """Wait for the earliest match of any pattern; return (index, match) or (None, None)."""
+        deadline = time.monotonic() + timeout
+        while True:
+            found = [(m.start(), i, m) for i, p in enumerate(patterns)
+                     if (m := re.search(p, self.buffer, re.I))]
+            if found:
+                _, index, match = min(found, key=lambda f: f[:2])
+                self.buffer = self.buffer[match.end():]
+                return index, match
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or self.cancelled:
+                return None, None
+            if select.select([self.master], [], [], min(remaining, .5))[0]:
+                try:
+                    chunk = os.read(self.master, 4096)
+                except OSError:
+                    chunk = b''
+                if not chunk:
+                    raise PairingError('Bluetooth-Dienst nicht erreichbar.')
+                self.buffer = (self.buffer + TERMINAL_NOISE.sub('', chunk.decode(errors='replace')))[-8000:]
+
+    def run(self):
+        try:
+            self.expect([r'Agent (?:is already )?registered'], 5)
+            self.send('default-agent')
+            # A device found by an earlier scan may already have expired from BlueZ.
+            self.send('scan on')
+            self.expect([re.escape(self.address)], 10)
+            self.send('scan off')
+            self.step = 'pairing'
+            self.send(f'pair {self.address}')
+            deadline = time.monotonic() + 90
+            while True:
+                if self.cancelled:
+                    return
+                if self.reply is not None:
+                    reply, self.reply = self.reply, None
+                    self.buffer = ''  # drop prompt redraws that arrived before the answer
+                    self.send(reply)
+                    self.step, self.passkey = 'pairing', None
+                if time.monotonic() > deadline:
+                    raise PairingError('Keine Antwort vom Gerät. Bitte erneut versuchen.')
+                index, match = self.expect([p for _, p in PAIR_EVENTS], 1)
+                if index is None:
+                    continue
+                event = PAIR_EVENTS[index][0]
+                if event in ('confirm', 'display'):
+                    self.step, self.passkey = event, match[1]
+                elif event == 'pin':
+                    self.step, self.passkey = 'pin', None
+                elif event == 'accept':
+                    self.send('yes')
+                elif event == 'paired':
+                    break
+                elif event == 'canceled':
+                    raise PairingError('Die Kopplung wurde am Gerät abgebrochen.')
+                else:
+                    raise PairingError(pairing_error(match[0]))
+            self.step, self.passkey = 'connecting', None
+            self.send(f'trust {self.address}')
+            self.expect([r'trust succeeded', r'Failed'], 5)
+            self.send(f'connect {self.address}')
+            index, _ = self.expect([r'Connection successful', r'Failed to connect'], 20)
+            self.message = 'Verbunden.' if index == 0 else 'Gekoppelt. Tippe in der Geräteliste auf „Verbinden“.'
+            self.step = 'done'
+        except PairingError as exc:
+            self.message, self.step = str(exc), 'failed'
+        except Exception:
+            self.message, self.step = 'Kopplung fehlgeschlagen. Bitte erneut versuchen.', 'failed'
+        finally:
+            if self.cancelled:
+                self.message, self.step = 'Kopplung abgebrochen.', 'failed'
+            try:
+                self.send('quit')
+            except OSError:
+                pass
+            try:
+                self.process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait()
+            os.close(self.master)
+
+
+def stop_scan():
+    if SCAN and SCAN.poll() is None:
+        SCAN.terminate()
+
+
+def start_scan():
+    global SCAN, SCAN_STARTED
+    with LOCK:
+        if PAIRING and PAIRING.active():
+            raise ValueError('Eine Kopplung läuft gerade.')
+        if SCAN and SCAN.poll() is None:
+            return
+        SCAN = subprocess.Popen([BLUETOOTHCTL, '--timeout', str(SCAN_SECONDS), 'scan', 'on'],
+                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        SCAN_STARTED = time.monotonic()
+
+
+def start_pairing(address, name):
+    global PAIRING
+    with LOCK:
+        if PAIRING and PAIRING.active():
+            raise ValueError('Eine Kopplung läuft bereits.')
+        stop_scan()
+        PAIRING = Pairing(address, name)
+
+
+def end_pairing():
+    global PAIRING
+    with LOCK:
+        session, PAIRING = PAIRING, None
+    if session:
+        session.cancel()
+
+
+def nearby(paired):
+    """Named devices from the latest scan that are not paired yet."""
+    if SCAN_STARTED is None or time.monotonic() - SCAN_STARTED > SCAN_SECONDS + 40:
+        return []
+    output = command([BLUETOOTHCTL, 'devices'], timeout=3)
+    found = []
+    for address, name in re.findall(r'^Device ([0-9A-Fa-f:]{17}) (.+)$', output, re.M):
+        if address.upper() not in paired and name.replace('-', ':').upper() != address.upper():
+            found.append(dict(address=address, name=name))
+    return found[:12]
+
+
 def status():
-    devices, bt_error, volume = [], None, None
+    devices, bt_error, volume, found = [], None, None, []
     if available('bluetoothctl'):
         try:
             output = command(['bluetoothctl', 'devices', 'Paired'], timeout=3)
@@ -117,6 +323,7 @@ def status():
             for address, name in re.findall(r'^Device ([0-9A-Fa-f:]{17}) (.+)$', output, re.M)[:20]:
                 is_connected = bool(re.search(r'^Device ' + re.escape(address) + r' ', connected, re.M | re.I))
                 devices.append(dict(address=address, name=name, connected=is_connected))
+            found = nearby({d['address'].upper() for d in devices})
         except (ValueError, subprocess.TimeoutExpired) as exc:
             bt_error = 'Bluetooth nicht erreichbar. Prüfe Adapter und Bluetooth-Dienst.'
     else:
@@ -150,7 +357,9 @@ def status():
     ]
     return dict(token=TOKEN, preview=PREVIEW, checks=checks,
                 carplay=dict(configured=configured, running=running, touch_home=home_ready),
-                bluetooth=dict(devices=devices, error=bt_error, manager=available('blueman-manager')),
+                bluetooth=dict(devices=devices, error=bt_error, manager=available('blueman-manager'),
+                               scanning=bool(SCAN and SCAN.poll() is None), nearby=found,
+                               pairing=PAIRING.state() if PAIRING else None),
                 audio=dict(volume=volume, manager=available('pavucontrol')))
 
 
@@ -222,13 +431,42 @@ class Handler(SimpleHTTPRequestHandler):
                 message = ''
             elif self.path == '/api/bluetooth':
                 address = data.get('address', '')
-                if not isinstance(address, str) or not re.fullmatch(r'(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}', address) or type(data.get('connect')) is not bool:
+                if not isinstance(address, str) or not ADDRESS.fullmatch(address) or type(data.get('connect')) is not bool:
                     raise ValueError('Ungültiges Bluetooth-Gerät.')
                 paired = command(['bluetoothctl', 'devices', 'Paired'])
                 if not re.search(r'^Device ' + re.escape(address) + r' ', paired, re.M | re.I):
-                    raise ValueError('Gerät zuerst über die Bluetooth-Verwaltung koppeln.')
+                    raise ValueError('Gerät zuerst über „Neues Gerät koppeln“ koppeln.')
                 command(['bluetoothctl', 'connect' if data['connect'] else 'disconnect', address], timeout=15)
                 message = 'Headset verbunden.' if data['connect'] else 'Verbindung getrennt.'
+            elif self.path == '/api/bluetooth/scan':
+                start_scan()
+                message = ''
+            elif self.path == '/api/bluetooth/pair':
+                address = data.get('address', '')
+                if not isinstance(address, str) or not ADDRESS.fullmatch(address):
+                    raise ValueError('Ungültiges Bluetooth-Gerät.')
+                known = command([BLUETOOTHCTL, 'devices'])
+                name = re.search(r'^Device ' + re.escape(address) + r' (.+)$', known, re.M | re.I)
+                start_pairing(address.upper(), name[1] if name else address.upper())
+                message = ''
+            elif self.path == '/api/bluetooth/answer':
+                session = PAIRING
+                if not session:
+                    raise ValueError('Es läuft keine Kopplung.')
+                session.answer(data.get('pin'))
+                message = ''
+            elif self.path == '/api/bluetooth/cancel':
+                end_pairing()
+                message = ''
+            elif self.path == '/api/bluetooth/remove':
+                address = data.get('address', '')
+                if not isinstance(address, str) or not ADDRESS.fullmatch(address):
+                    raise ValueError('Ungültiges Bluetooth-Gerät.')
+                paired = command(['bluetoothctl', 'devices', 'Paired'])
+                if not re.search(r'^Device ' + re.escape(address) + r' ', paired, re.M | re.I):
+                    raise ValueError('Dieses Gerät ist nicht gekoppelt.')
+                command([BLUETOOTHCTL, 'remove', address])
+                message = 'Gerät entfernt.'
             else:
                 return self.respond({'error':'Unbekannte Aktion.'}, 404)
             self.respond({'message':message})
@@ -266,6 +504,8 @@ def main():
         pass
     finally:
         server.server_close()
+        end_pairing()
+        stop_scan()
         with LOCK:
             for process in PROCESSES.values():
                 if process.poll() is None:

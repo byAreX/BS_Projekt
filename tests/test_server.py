@@ -1,6 +1,10 @@
 import http.client
 import json
+import os
+import stat
 import sys
+import tempfile
+import time
 import threading
 import unittest
 from pathlib import Path
@@ -103,6 +107,99 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(self.request('/api/carplay/stop', {}, self.auth())[0], 200)
             carplay.terminate.assert_called_once()
             carplay.wait.assert_called_once_with(timeout=5)
+
+    def test_pairing_endpoints_validate_input(self):
+        with patch.object(server, 'PREVIEW', False), patch.object(server, 'command', return_value='') as command, \
+                patch.object(server, 'start_pairing') as start:
+            self.assertEqual(self.request('/api/bluetooth/pair', {'address':'x; reboot'}, self.auth())[0], 400)
+            self.assertEqual(self.request('/api/bluetooth/remove', {'address':'AA:BB:CC:DD:EE:FF'}, self.auth())[0], 400)
+            start.assert_not_called()
+            self.assertNotIn(['bluetoothctl','remove','AA:BB:CC:DD:EE:FF'], [c.args[0] for c in command.call_args_list])
+            with patch.object(server, 'PAIRING', None):
+                self.assertEqual(self.request('/api/bluetooth/answer', {'pin':'0000'}, self.auth())[0], 400)
+
+    def test_remove_only_paired_device(self):
+        with patch.object(server, 'PREVIEW', False), patch.object(server, 'command', return_value='Device AA:BB:CC:DD:EE:FF Cardo') as command:
+            self.assertEqual(self.request('/api/bluetooth/remove', {'address':'AA:BB:CC:DD:EE:FF'}, self.auth())[0], 200)
+            self.assertEqual(command.call_args.args[0], ['bluetoothctl','remove','AA:BB:CC:DD:EE:FF'])
+
+
+FAKE_BLUETOOTHCTL = r"""#!/usr/bin/env python3
+import os
+mode = os.environ['FAKE_BT_MODE']
+print('[0;94mAgent registered[0m', flush=True)
+while True:
+    try:
+        command = input('[bluetooth]# ').split()
+    except EOFError:
+        break
+    if command == ['scan', 'on']:
+        print('[[0;92mNEW[0m] Device AA:BB:CC:DD:EE:FF Cardo', flush=True)
+    elif command[:1] == ['pair']:
+        if mode == 'confirm':
+            ok = input('[0;91m[agent][0m Confirm passkey 123456 (yes/no): ') == 'yes'
+        elif mode == 'pin':
+            ok = input('[0;91m[agent][0m Enter PIN code: ') == '0000'
+        else:
+            ok = False
+        print('Pairing successful' if ok else 'Failed to pair: org.bluez.Error.AuthenticationFailed', flush=True)
+    elif command[:1] == ['trust']:
+        print('Changing AA:BB:CC:DD:EE:FF trust succeeded', flush=True)
+    elif command[:1] == ['connect']:
+        print('Connection successful', flush=True)
+    elif command == ['quit']:
+        break
+"""
+
+
+class PairingTests(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        fake = Path(folder.name) / 'bluetoothctl'
+        fake.write_text(FAKE_BLUETOOTHCTL)
+        fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+        patcher = patch.object(server, 'BLUETOOTHCTL', str(fake))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def pair(self, mode):
+        with patch.dict(os.environ, {'FAKE_BT_MODE':mode}):
+            return server.Pairing('AA:BB:CC:DD:EE:FF', 'Cardo')
+
+    def wait_for(self, session, steps):
+        deadline = time.monotonic() + 10
+        while session.step not in steps and time.monotonic() < deadline:
+            time.sleep(.05)
+        self.assertIn(session.step, steps, session.message)
+
+    def test_passkey_is_shown_and_confirmed(self):
+        session = self.pair('confirm')
+        self.wait_for(session, {'confirm'})
+        self.assertEqual(session.passkey, '123456')
+        session.answer()
+        self.wait_for(session, {'done'})
+        self.assertEqual(session.message, 'Verbunden.')
+
+    def test_pin_is_entered(self):
+        session = self.pair('pin')
+        self.wait_for(session, {'pin'})
+        with self.assertRaises(ValueError):
+            session.answer('12a4')
+        session.answer('0000')
+        self.wait_for(session, {'done'})
+
+    def test_rejected_pairing_reports_failure(self):
+        session = self.pair('fail')
+        self.wait_for(session, {'failed'})
+        self.assertIn('abgelehnt', session.message)
+
+    def test_cancel_stops_session(self):
+        session = self.pair('confirm')
+        self.wait_for(session, {'confirm'})
+        session.cancel()
+        self.wait_for(session, {'failed'})
+        self.assertEqual(session.message, 'Kopplung abgebrochen.')
 
 
 if __name__ == '__main__':

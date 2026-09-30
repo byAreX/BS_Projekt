@@ -13,3 +13,49 @@ footer,.text-button{font-size:11px}
 .check small{color:var(--muted);font-size:11px;line-height:1.3;margin-top:2px}
 .checks{margin:8px 0 12px}
 .connection #stop-carplay{margin-top:10px;background:#344b62}
+
+/* Bluetooth pairing screen and dialog. */
+.page-heading #scan{margin-left:auto}
+.device-actions{display:flex;gap:8px;flex:none}
+.device .remove{background:transparent;border:1px solid var(--line);color:var(--muted)}
+.light .device .remove{color:var(--muted)}
+.pair-layout{display:grid;grid-template-columns:220px 1fr;gap:22px;height:250px}
+.pair-intro{display:flex;flex-direction:column;align-items:center;text-align:center;justify-content:center}
+.pair-intro p{font-size:13px;color:var(--ink);line-height:1.4;margin:18px 0 0}
+.pair-intro .hint{margin-top:8px}
+.radar{position:relative;width:86px;height:86px;border-radius:50%;display:grid;place-items:center;background:#13335a;color:#58acff}
+.radar svg{width:36px;height:36px}
+.radar::before,.radar::after{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid #419eff;opacity:0}
+.radar.active::before{animation:ping 2s ease-out infinite}
+.radar.active::after{animation:ping 2s ease-out 1s infinite}
+.nearby{border:1px solid var(--line);border-radius:17px;background:#111925b3;padding:10px;overflow-y:auto;scrollbar-width:thin;display:flex;flex-direction:column;gap:8px}
+.nearby .empty{margin:auto;font-size:13px;color:var(--muted);text-align:center;padding:0 20px}
+.nearby-device{display:flex;align-items:center;gap:14px;min-height:60px;padding:8px 14px;border-radius:12px;background:var(--surface);text-align:left;flex:none;border:1px solid transparent}
+.nearby-device:hover:not(:disabled){border-color:#60b4ff60}
+.nearby-icon{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;background:#153558;color:#70baff;flex:none}
+.nearby-icon svg{width:20px;height:20px}
+.nearby-name{flex:1;font-size:15px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nearby-name small{display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:3px}
+.nearby-go{font-size:12px;font-weight:600;color:var(--accent)}
+#bt-pair .text-button{margin:4px auto 0}
+#pair-dialog{position:absolute;inset:0;z-index:15;display:grid;place-items:center;background:#03060bcc;backdrop-filter:blur(6px);padding:20px}
+.dialog-card{width:min(440px,100%);background:#111a27;border:1px solid #ffffff1a;border-radius:20px;padding:24px 26px;text-align:center;box-shadow:0 20px 60px #000a;animation:reveal .25s ease both}
+.dialog-card h2{font-size:21px;font-weight:600;letter-spacing:-.4px;margin:0 0 8px}
+.dialog-card p{font-size:13px;line-height:1.5;color:var(--muted);margin:0 0 16px}
+.pair-code{display:block;font-size:40px;font-weight:600;letter-spacing:8px;color:var(--ink);font-variant-numeric:tabular-nums;margin:0 0 18px}
+.dialog-actions{display:flex;gap:10px;justify-content:center}
+.dialog-actions button{flex:1;max-width:180px}
+.secondary{min-height:46px;border-radius:11px;padding:10px 16px;font-size:13px;font-weight:600;background:#254565}
+.spinner{display:block;width:44px;height:44px;margin:0 auto 16px;border-radius:50%;border:3px solid #1e3a5c;border-top-color:#419eff;animation:spin 1s linear infinite}
+#pair-dialog[data-step=pin] .dialog-card{width:min(640px,100%);display:grid;grid-template-columns:1fr 204px;column-gap:26px;align-items:center;text-align:left}
+#pair-dialog[data-step=pin] .dialog-actions{justify-content:flex-start}
+.pin-pad{grid-column:2;grid-row:1/span 6;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pin-pad button{min-height:48px;border-radius:11px;background:var(--surface);font-size:19px;font-weight:600}
+.pin-pad .pin-hint{font-size:12px;color:var(--accent)}
+.light .dialog-card{background:#f4f8fc;border-color:#102a4517}
+.light .nearby{background:#f4f8fc}
+.light .nearby-icon,.light .radar{background:#cce2fa;color:#0755ac}
+.light .secondary{background:#cfdcea}
+@keyframes ping{from{transform:scale(1);opacity:.7}to{transform:scale(1.7);opacity:0}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:620px){.pair-layout{grid-template-columns:1fr;height:auto}.pair-intro{padding:10px 0}.nearby{height:260px}#pair-dialog[data-step=pin] .dialog-card{grid-template-columns:1fr}.pin-pad{grid-column:1;grid-row:auto;margin-bottom:14px}}

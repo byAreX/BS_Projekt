@@ -31,8 +31,26 @@
         </div>
       </div>
     </section>
+    <section id="bt-pair" class="screen" hidden>
+      <div class="page-heading"><button class="back" data-back="settings" aria-label="Zurück zu den Einstellungen" data-icon="back"></button><h1>Neues Gerät koppeln</h1><button id="scan" class="icon-button" aria-label="Erneut suchen" data-icon="replay"></button></div>
+      <div class="pair-layout">
+        <div class="pair-intro"><span id="radar" class="radar" aria-hidden="true"><span data-icon="bluetooth"></span></span><p id="scan-status" aria-live="polite">Suche wird gestartet …</p><p class="hint">Headset in den Kopplungsmodus versetzen und in der Liste antippen.</p></div>
+        <div id="nearby" class="nearby"></div>
+      </div>
+      <button class="text-button" id="pair-advanced">Erweiterte Bluetooth-Verwaltung öffnen</button>
+    </section>
     <section id="carplay" class="screen" hidden><div class="page-heading"><button class="back" aria-label="Zurück zur Startseite" data-icon="back"></button><h1>CarPlay</h1></div><div class="connection"><span class="connection-icon" data-icon="carplay"></span><h2 id="connection-title">Deine Tour beginnt hier.</h2><p id="connection-message">Verbinde dein iPhone über die eingerichtete CarPlay-Anwendung.</p><button class="primary" id="launch">CarPlay starten <span data-icon="arrow"></span></button><button class="primary" id="stop-carplay" hidden>CarPlay beenden</button><p class="hint" id="connection-hint">Musik und Navigation werden von deinem iPhone bereitgestellt.</p></div></section>
     <div id="boot" hidden role="status" aria-label="DriveSphere startet"><div class="boot-orbit" aria-hidden="true"></div><div class="boot-content"><img src="/assets/drivesphere.png" alt="DriveSphere" class="boot-logo"><p class="boot-tagline">RIDE CONNECTED.</p><div class="boot-track"><span></span></div><p class="boot-caption">Deine nächste Tour beginnt hier.</p></div><span class="boot-edition">MOTORCYCLE EXPERIENCE <span>01</span></span></div>
+    <div id="pair-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="pair-title">
+      <div class="dialog-card">
+        <span id="pair-spinner" class="spinner" aria-hidden="true"></span>
+        <h2 id="pair-title">Kopplung</h2>
+        <p id="pair-text"></p>
+        <output id="pair-code" class="pair-code" hidden></output>
+        <div id="pin-pad" class="pin-pad" hidden><button data-digit="1">1</button><button data-digit="2">2</button><button data-digit="3">3</button><button data-digit="4">4</button><button data-digit="5">5</button><button data-digit="6">6</button><button data-digit="7">7</button><button data-digit="8">8</button><button data-digit="9">9</button><button data-digit="clear" aria-label="Löschen">⌫</button><button data-digit="0">0</button><button data-digit="0000" class="pin-hint">0000</button></div>
+        <div class="dialog-actions"><button id="pair-cancel" class="secondary">Abbrechen</button><button id="pair-ok" class="primary">Bestätigen</button></div>
+      </div>
+    </div>
     <div id="toast" role="status" hidden></div>
   </main>
   <script src="/app.js" defer></script>
