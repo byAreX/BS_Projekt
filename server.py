@@ -31,6 +31,8 @@ SCAN_SECONDS = 20
 SCAN = None
 SCAN_STARTED = None
 PAIRING = None
+CARPLAY_START_SECONDS = 45
+CARPLAY_STARTED = float('-inf')
 
 
 def command(args, timeout=8):
@@ -54,7 +56,7 @@ def carplay_command():
 
 def touch_home_available():
     return (not PREVIEW and bool(os.environ.get('WAYLAND_DISPLAY'))
-            and touch_home_dependencies())
+            and bool(shutil.which('wlrctl')) and touch_home_dependencies())
 
 
 @lru_cache(maxsize=1)
@@ -74,44 +76,110 @@ def launch(name, args):
         PROCESSES[name] = subprocess.Popen(args, cwd=ROOT, stdin=subprocess.DEVNULL)
 
 
-def start_carplay(args):
-    if not touch_home_available():
-        raise ValueError('Touch-Home ist nicht verfügbar. GTK Layer Shell und Wayland prüfen.')
-    with LOCK:
-        current = PROCESSES.get('carplay')
-        if current and current.poll() is None:
-            raise ValueError('Die Anwendung ist bereits geöffnet.')
-        env = {**os.environ, 'DRIVESPHERE_TOKEN': TOKEN, 'DRIVESPHERE_PORT': str(SERVER_PORT)}
-        home = subprocess.Popen([sys.executable, str(ROOT / 'scripts/touch-home.py')],
-                                cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, env=env)
-        with selectors.DefaultSelector() as selector:
-            selector.register(home.stdout, selectors.EVENT_READ)
-            ready = bool(selector.select(timeout=4)) and home.stdout.readline().strip() == b'READY'
-        home.stdout.close()
-        if not ready or home.poll() is not None:
-            if home.poll() is None:
-                home.terminate()
-            raise ValueError('Touch-Home konnte nicht gestartet werden. Wayland-Sitzung prüfen.')
-        try:
-            carplay = subprocess.Popen(args, cwd=ROOT, stdin=subprocess.DEVNULL)
-        except Exception:
+# LIVI's launcher hands its window to a nested compositor and exits, so CarPlay is found by
+# its window (labwc foreign-toplevel via wlrctl) instead of by the launched process.
+def carplay_window():
+    match = CONFIG.get('carplay_window', 'app_id:dev.f-io.livi')
+    return match if isinstance(match, str) and re.fullmatch(r'(app_id|title):[\w.-]+', match) else ''
+
+
+def carplay_window_action(action, *matches):
+    window = carplay_window()
+    if not window or not shutil.which('wlrctl'):
+        return False
+    try:
+        return subprocess.run(['wlrctl', 'toplevel', action, window, *matches], stdin=subprocess.DEVNULL,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def carplay_starting():
+    return time.monotonic() - CARPLAY_STARTED < CARPLAY_START_SECONDS
+
+
+def carplay_running():
+    process = PROCESSES.get('carplay')
+    return (bool(process and process.poll() is None) or carplay_starting()
+            or carplay_window_action('find'))
+
+
+def start_touch_home():
+    home = PROCESSES.get('touch-home')
+    if home and home.poll() is None:
+        return
+    env = {**os.environ, 'DRIVESPHERE_TOKEN': TOKEN, 'DRIVESPHERE_PORT': str(SERVER_PORT),
+           'DRIVESPHERE_CARPLAY_WINDOW': carplay_window(),
+           'DRIVESPHERE_CARPLAY_START_SECONDS': str(CARPLAY_START_SECONDS)}
+    home = subprocess.Popen([sys.executable, str(ROOT / 'scripts/touch-home.py')],
+                            cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, env=env)
+    with selectors.DefaultSelector() as selector:
+        selector.register(home.stdout, selectors.EVENT_READ)
+        ready = bool(selector.select(timeout=4)) and home.stdout.readline().strip() == b'READY'
+    home.stdout.close()
+    if not ready or home.poll() is not None:
+        if home.poll() is None:
             home.terminate()
+        raise ValueError('Touch-Home konnte nicht gestartet werden. Wayland-Sitzung prüfen.')
+    PROCESSES['touch-home'] = home
+
+
+def start_carplay(args):
+    """Start CarPlay, or bring an already running CarPlay window back to the front."""
+    global CARPLAY_STARTED
+    if not touch_home_available():
+        raise ValueError('Touch-Home ist nicht verfügbar. GTK Layer Shell, wlrctl und Wayland prüfen.')
+    with LOCK:
+        if carplay_window_action('find'):
+            start_touch_home()
+            if not carplay_window_action('focus'):
+                raise ValueError('CarPlay-Fenster konnte nicht nach vorne geholt werden.')
+            return False
+        process = PROCESSES.get('carplay')
+        if carplay_starting() or (process and process.poll() is None):
+            raise ValueError('CarPlay startet noch. Bitte kurz warten.')
+        start_touch_home()
+        try:
+            PROCESSES['carplay'] = subprocess.Popen(args, cwd=ROOT, stdin=subprocess.DEVNULL)
+        except Exception:
+            PROCESSES.pop('touch-home').terminate()
             raise
-        PROCESSES['carplay'] = carplay
-        PROCESSES['touch-home'] = home
+        CARPLAY_STARTED = time.monotonic()
+        return True
+
+
+def hide_carplay():
+    if not carplay_window_action('minimize'):
+        raise ValueError('CarPlay-Fenster nicht gefunden.')
 
 
 def stop_carplay():
+    global CARPLAY_STARTED
     with LOCK:
         process = PROCESSES.get('carplay')
-        if not process or process.poll() is not None:
+        alive = bool(process and process.poll() is None)
+        window = carplay_window_action('find')
+        if not alive and not window and not carplay_starting():
             raise ValueError('CarPlay läuft nicht mehr.')
-        process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=2)
+        CARPLAY_STARTED = float('-inf')
+        if alive:
+            process.terminate()
+    if alive:
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=2)
+    name = CONFIG.get('carplay_process', 'livi-compositor')
+    if isinstance(name, str) and re.fullmatch(r'[\w.-]{1,15}', name):
+        subprocess.run(['pkill', '-TERM', '-u', str(os.getuid()), '-x', name],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+        for _ in range(20):
+            if not carplay_window_action('find'):
+                break
+            time.sleep(.25)
+        else:
+            raise ValueError('CarPlay-Fenster ist noch offen. LIVI über seine Navigation beenden.')
     home = PROCESSES.get('touch-home')
     if home and home.poll() is None:
         home.terminate()
@@ -337,9 +405,8 @@ def status():
         except (ValueError, subprocess.TimeoutExpired):
             pass
     args = carplay_command()
-    process = PROCESSES.get('carplay')
     configured = bool(args and shutil.which(args[0]))
-    running = bool(process and process.poll() is None)
+    running = not PREVIEW and carplay_running()
     home_ready = touch_home_available()
     checks = [
         dict(name='CarPlay-Startbefehl', ok=configured,
@@ -353,7 +420,7 @@ def status():
         dict(name='Audioverwaltung', ok=available('pavucontrol'),
              detail='Bereit.' if available('pavucontrol') else 'pavucontrol installieren.'),
         dict(name='Touch-Home', ok=home_ready,
-             detail='Overlay kann gestartet werden.' if home_ready else 'Wayland, python3-gi und gir1.2-gtklayershell-0.1 prüfen.'),
+             detail='Overlay kann gestartet werden.' if home_ready else 'Wayland, wlrctl, python3-gi und gir1.2-gtklayershell-0.1 prüfen.'),
     ]
     return dict(token=TOKEN, preview=PREVIEW, checks=checks,
                 carplay=dict(configured=configured, running=running, touch_home=home_ready),
@@ -411,8 +478,12 @@ class Handler(SimpleHTTPRequestHandler):
                 args = carplay_command()
                 if not args:
                     raise ValueError('Bitte zuerst carplay_command in config.json einrichten.')
-                start_carplay(args)
-                message = 'CarPlay gestartet. Die Home-Taste am Display bringt dich zurück.'
+                started = start_carplay(args)
+                message = ('CarPlay gestartet. Die Home-Taste am Display bringt dich zurück.' if started
+                           else 'CarPlay ist wieder im Vordergrund.')
+            elif self.path == '/api/carplay/hide':
+                hide_carplay()
+                message = 'CarPlay läuft im Hintergrund weiter.'
             elif self.path == '/api/carplay/stop':
                 stop_carplay()
                 message = 'CarPlay beendet. Das Startmenü ist wieder erreichbar.'

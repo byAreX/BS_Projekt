@@ -42,7 +42,7 @@ sudo apt-get update
 sudo apt-get install -y rpd-wayland-core rpd-theme rpd-preferences \
   python3 chromium curl bluez blueman pipewire wireplumber \
   libspa-0.2-bluetooth pavucontrol python3-gi gir1.2-gtk-3.0 \
-  gir1.2-gtklayershell-0.1 plymouth plymouth-themes initramfs-tools fonts-dejavu-core
+  gir1.2-gtklayershell-0.1 wlrctl foot plymouth plymouth-themes initramfs-tools fonts-dejavu-core
 
 if ! command -v labwc >/dev/null; then
   echo 'labwc fehlt nach der Paketinstallation.' >&2
@@ -68,10 +68,10 @@ else
 fi
 
 bash scripts/finish-livi.sh
-python3 scripts/install-autostart.py
 sudo raspi-config nonint do_boot_behaviour B4
+bash scripts/install-session.sh
 sudo bash scripts/install-plymouth.sh
 
 echo
-echo 'DriveSphere und LIVI sind installiert. Der Pi startet mit Plymouth-Bootbalken und Desktop-Autologin.'
+echo 'DriveSphere und LIVI sind installiert. Der Pi startet mit Plymouth-Bootbalken direkt ins Menü, ohne Desktop.'
 echo 'Jetzt sudo reboot ausführen und Touchscreen, Audio und CarPlay mit dem iPhone prüfen.'

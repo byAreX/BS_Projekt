@@ -14,7 +14,7 @@ sudo reboot
 
 Das Skript prüft den Pi-5-Kernel `kernel_2712.img`, das dazugehörige `initramfs_2712` und `auto_initramfs=1`. Es aktiviert den Raspberry-Pi-Plymouth-Splash nur, wenn er noch ausgeschaltet ist, kopiert Theme und Logo und baut das Initramfs mit `plymouth-set-default-theme -R drivesphere` neu. Danach setzt es `/etc/drivesphere/linux-boot-splash`, damit Chromium direkt das Menü öffnet und keine zweite Browseranimation abspielt.
 
-Der Plymouth-Balken zeigt den geschätzten **Linux-Start** an. Nach dem Ende von Plymouth können noch Desktop-Autologin und Chromium starten. Ein kurzer schwarzer Übergang oder ein sichtbarer Desktop ist möglich und muss am echten Display geprüft werden. Der Installer ändert keine Display-Timings.
+Der Plymouth-Balken zeigt den geschätzten **Linux-Start** an. Nach dem Ende von Plymouth starten noch Autologin und Chromium. Da der Pi in die eigene [DriveSphere-Sitzung ohne Desktop](../README.md#start-ohne-desktop) startet, erscheinen dabei weder Hintergrundbild noch Taskleiste. Ein kurzer leerer Übergang bis zum ersten Chromium-Bild ist möglich und muss am echten Display geprüft werden. Der Installer ändert keine Display-Timings.
 
 ## Manuell installieren und zurücksetzen
 

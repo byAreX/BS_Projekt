@@ -98,15 +98,45 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(self.request('/api/carplay', {}, self.auth())[0], 400)
             popen.assert_not_called()
 
-    def test_touch_home_stops_managed_carplay_process(self):
+    def test_stop_ends_managed_carplay_and_livi_compositor(self):
         with patch.object(server, 'PREVIEW', False), patch.dict(server.PROCESSES, {}, clear=True), \
-                patch('subprocess.Popen') as popen:
+                patch.object(server, 'carplay_window_action', side_effect=[True, False]), \
+                patch('subprocess.run') as run, patch('subprocess.Popen') as popen:
             carplay = popen.return_value
             carplay.poll.return_value = None
             server.PROCESSES['carplay'] = carplay
             self.assertEqual(self.request('/api/carplay/stop', {}, self.auth())[0], 200)
             carplay.terminate.assert_called_once()
             carplay.wait.assert_called_once_with(timeout=5)
+            self.assertEqual(run.call_args.args[0][-2:], ['-x', 'livi-compositor'])
+
+    def test_running_carplay_is_brought_to_front_not_restarted(self):
+        actions = []
+        def window(action, *matches):
+            actions.append(action)
+            return True
+        with patch.object(server, 'PREVIEW', False), patch.object(server, 'CONFIG', {'carplay_command':['/test/livi']}), \
+                patch.object(server, 'touch_home_available', return_value=True), \
+                patch.object(server, 'start_touch_home'), patch.object(server, 'carplay_window_action', side_effect=window), \
+                patch('subprocess.Popen') as popen:
+            code, result = self.request('/api/carplay', {}, self.auth())
+            self.assertEqual(code, 200)
+            self.assertEqual(result['message'], 'CarPlay ist wieder im Vordergrund.')
+            self.assertEqual(actions, ['find', 'focus'])
+            popen.assert_not_called()
+
+    def test_hide_minimizes_carplay_window(self):
+        with patch.object(server, 'PREVIEW', False), \
+                patch.object(server, 'carplay_window_action', return_value=True) as window:
+            self.assertEqual(self.request('/api/carplay/hide', {}, self.auth())[0], 200)
+            window.assert_called_once_with('minimize')
+        with patch.object(server, 'PREVIEW', False), patch.object(server, 'carplay_window_action', return_value=False):
+            self.assertEqual(self.request('/api/carplay/hide', {}, self.auth())[0], 400)
+
+    def test_invalid_carplay_window_match_is_ignored(self):
+        with patch.object(server, 'CONFIG', {'carplay_window':'app_id:x; reboot'}):
+            self.assertEqual(server.carplay_window(), '')
+            self.assertFalse(server.carplay_window_action('find'))
 
     def test_pairing_endpoints_validate_input(self):
         with patch.object(server, 'PREVIEW', False), patch.object(server, 'command', return_value='') as command, \

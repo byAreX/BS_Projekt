@@ -47,7 +47,10 @@ function finishBoot() {
 document.querySelector('.brand').onclick = e => { e.preventDefault(); screen('home'); };
 document.querySelectorAll('.back').forEach(b => b.onclick = () => screen(b.dataset.back || 'home'));
 $('open-settings').onclick = () => screen('settings');
-$('open-carplay').onclick = () => { screen('carplay'); refresh(); };
+$('open-carplay').onclick = () => {
+  if (state?.carplay.running && state.carplay.touch_home) return action($('open-carplay'), 'carplay');
+  screen('carplay'); refresh();
+};
 document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
   document.querySelectorAll('[data-tab]').forEach(x => { x.classList.toggle('active', x === b); x.setAttribute('aria-pressed', x === b); });
   document.querySelectorAll('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== b.dataset.tab);
@@ -64,11 +67,11 @@ async function api(path, data) {
 function render() {
   $('mode').textContent = state.preview ? 'VORSCHAU' : 'RASPBERRY PI';
   $('system-mode').textContent = state.preview ? 'Vorschau ohne Hardware' : 'Lokaler Hardwarezugriff';
-  $('carplay-status').textContent = state.carplay.running ? 'CarPlay-Anwendung geöffnet' : state.carplay.configured && state.carplay.touch_home ? 'Anwendung startbereit' : 'Einrichtung erforderlich';
-  $('connection-title').textContent = state.carplay.running ? 'CarPlay ist geöffnet.' : state.preview ? 'Dein iPhone. Auf deinem Bike.' : 'Deine Tour beginnt hier.';
-  $('connection-message').textContent = state.preview ? 'Dies ist die Menüvorschau. Auf dem Raspberry Pi öffnet diese Taste eure eingerichtete CarPlay-Anwendung.' : state.carplay.running ? 'Tippe in CarPlay unten rechts auf Home, um zum Startmenü zurückzukehren.' : !state.carplay.configured ? 'Die CarPlay-Anwendung ist noch nicht eingerichtet. Hinterlege ihren Startbefehl in der DriveSphere-Konfiguration.' : !state.carplay.touch_home ? 'Touch-Home fehlt. Öffne Einstellungen → System für die Einrichtung.' : 'Starte CarPlay und verbinde dein iPhone. Die Home-Taste bleibt am Display erreichbar.';
-  $('launch').disabled = state.preview || !state.carplay.configured || !state.carplay.touch_home || state.carplay.running;
-  $('launch').firstChild.textContent = state.carplay.running ? 'CarPlay läuft ' : 'CarPlay starten ';
+  $('carplay-status').textContent = state.carplay.running ? 'Läuft im Hintergrund · Antippen zum Wechseln' : state.carplay.configured && state.carplay.touch_home ? 'Anwendung startbereit' : 'Einrichtung erforderlich';
+  $('connection-title').textContent = state.carplay.running ? 'CarPlay läuft weiter.' : state.preview ? 'Dein iPhone. Auf deinem Bike.' : 'Deine Tour beginnt hier.';
+  $('connection-message').textContent = state.preview ? 'Dies ist die Menüvorschau. Auf dem Raspberry Pi öffnet diese Taste eure eingerichtete CarPlay-Anwendung.' : state.carplay.running ? 'Wechsle zurück zu CarPlay. Dort bringt dich Home unten rechts wieder hierher, ohne dass die Verbindung abbricht.' : !state.carplay.configured ? 'Die CarPlay-Anwendung ist noch nicht eingerichtet. Hinterlege ihren Startbefehl in der DriveSphere-Konfiguration.' : !state.carplay.touch_home ? 'Touch-Home fehlt. Öffne Einstellungen → System für die Einrichtung.' : 'Starte CarPlay und verbinde dein iPhone. Die Home-Taste bleibt am Display erreichbar.';
+  $('launch').disabled = state.preview || !state.carplay.configured || !state.carplay.touch_home;
+  $('launch').firstChild.textContent = state.carplay.running ? 'Zu CarPlay wechseln ' : 'CarPlay starten ';
   $('stop-carplay').hidden = !state.carplay.running;
   $('pair').disabled = state.preview || !!state.bluetooth.error;
   $('pair-advanced').disabled = !state.bluetooth.manager;
