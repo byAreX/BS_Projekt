@@ -133,6 +133,18 @@ class ApiTests(unittest.TestCase):
         with patch.object(server, 'PREVIEW', False), patch.object(server, 'carplay_window_action', return_value=False):
             self.assertEqual(self.request('/api/carplay/hide', {}, self.auth())[0], 400)
 
+    def test_prefs_are_saved_and_returned(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(server, 'PREFS_FILE', Path(folder) / 'prefs.json'), \
+                patch.object(server, 'PREVIEW', True):
+            self.assertIsNone(self.request('/api/status')[1]['prefs'])
+            self.assertEqual(self.request('/api/prefs', {'theme':'light', 'brightness':70}, self.auth())[0], 200)
+            self.assertEqual(self.request('/api/status')[1]['prefs'], {'theme':'light', 'brightness':70})
+            for bad in [{'theme':'blue', 'brightness':70}, {'theme':'dark', 'brightness':20},
+                        {'theme':'dark', 'brightness':True}, {'theme':'dark'}]:
+                self.assertEqual(self.request('/api/prefs', bad, self.auth())[0], 400)
+            self.assertEqual(server.load_prefs(), {'theme':'light', 'brightness':70})
+            self.assertEqual(self.request('/api/prefs', {'theme':'dark', 'brightness':70})[0], 403)
+
     def test_invalid_carplay_window_match_is_ignored(self):
         with patch.object(server, 'CONFIG', {'carplay_window':'app_id:x; reboot'}):
             self.assertEqual(server.carplay_window(), '')

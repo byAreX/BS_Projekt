@@ -14,9 +14,9 @@ document.querySelectorAll('[data-icon]').forEach(el => {
 });
 const $ = id => document.getElementById(id);
 let state = null, bootTimer, toastTimer, refreshing = false, pin = '', removing = null;
-let prefs = {theme:'dark', brightness:100};
+let prefs = {theme:'dark', brightness:100}, prefsLoaded = false, prefsTimer;
 try { prefs = {...prefs, ...JSON.parse(localStorage.getItem('drivesphere') || '{}')}; } catch {}
-function applyPrefs() {
+function applyPrefs(save = true) {
   prefs.brightness = Math.max(40, Math.min(100, Number(prefs.brightness) || 100));
   $('display').classList.toggle('light', prefs.theme === 'light');
   $('display').style.filter = `brightness(${prefs.brightness / 100})`;
@@ -24,8 +24,11 @@ function applyPrefs() {
   $('brightness-value').textContent = `${prefs.brightness} %`;
   document.querySelectorAll('[data-theme]').forEach(b => { b.classList.toggle('selected', b.dataset.theme === prefs.theme); b.setAttribute('aria-pressed', b.dataset.theme === prefs.theme); });
   try { localStorage.setItem('drivesphere', JSON.stringify(prefs)); } catch {}
+  if (save && prefsLoaded) { clearTimeout(prefsTimer); prefsTimer = setTimeout(savePrefs, 400); }
 }
-applyPrefs();
+// localStorage may be lost on a power cut, so the server keeps the durable copy.
+function savePrefs() { api('prefs', {theme:prefs.theme, brightness:prefs.brightness}).catch(() => {}); }
+applyPrefs(false);
 function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 6500); }
 function screen(name) {
   document.querySelectorAll('.screen').forEach(s => s.hidden = s.id !== name);
@@ -162,7 +165,11 @@ function renderPairing() {
 }
 async function refresh() {
   if (refreshing) return; refreshing = true;
-  try { state = await api('status'); render(); }
+  try {
+    state = await api('status');
+    if (!prefsLoaded) { prefsLoaded = true; if (state.prefs) { prefs = {...prefs, ...state.prefs}; applyPrefs(false); } else savePrefs(); }
+    render();
+  }
   catch { $('mode').textContent = 'OFFLINE'; $('carplay-status').textContent = 'Menüserver nicht erreichbar'; $('devices').textContent = 'Menüserver nicht erreichbar. Starte server.py.'; $('launch').disabled = $('pair').disabled = $('volume').disabled = $('audio-manager').disabled = true; }
   finally { refreshing = false; }
 }

@@ -23,6 +23,7 @@ TOKEN = secrets.token_urlsafe(32)
 SERVER_PORT = 8765
 PREVIEW = True
 CONFIG = {}
+PREFS_FILE = ROOT / 'prefs.json'
 PROCESSES = {}
 LOCK = threading.Lock()
 BLUETOOTHCTL = 'bluetoothctl'
@@ -67,6 +68,35 @@ def touch_home_dependencies():
         return result.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
+
+
+def valid_prefs(data):
+    if (not isinstance(data, dict) or data.get('theme') not in ('dark', 'light')
+            or type(data.get('brightness')) is not int or not 40 <= data['brightness'] <= 100):
+        raise ValueError('Ungültige Einstellungen.')
+    return {'theme': data['theme'], 'brightness': data['brightness']}
+
+
+def load_prefs():
+    try:
+        return valid_prefs(json.loads(PREFS_FILE.read_text()))
+    except (OSError, ValueError):
+        return None
+
+
+# The Pi often loses power without a shutdown, so write atomically and flush to disk right away.
+def save_prefs(prefs):
+    temp = PREFS_FILE.with_name(PREFS_FILE.name + '.tmp')
+    with open(temp, 'w') as file:
+        json.dump(prefs, file)
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(temp, PREFS_FILE)
+    folder = os.open(PREFS_FILE.parent, os.O_RDONLY)
+    try:
+        os.fsync(folder)
+    finally:
+        os.close(folder)
 
 
 def launch(name, args):
@@ -422,7 +452,7 @@ def status():
         dict(name='Touch-Home', ok=home_ready,
              detail='Overlay kann gestartet werden.' if home_ready else 'Wayland, wlrctl, python3-gi und gir1.2-gtklayershell-0.1 prüfen.'),
     ]
-    return dict(token=TOKEN, preview=PREVIEW, checks=checks,
+    return dict(token=TOKEN, preview=PREVIEW, checks=checks, prefs=load_prefs(),
                 carplay=dict(configured=configured, running=running, touch_home=home_ready),
                 bluetooth=dict(devices=devices, error=bt_error, manager=available('blueman-manager'),
                                scanning=bool(SCAN and SCAN.poll() is None), nearby=found,
@@ -465,7 +495,7 @@ class Handler(SimpleHTTPRequestHandler):
         allowed = (f'http://127.0.0.1:{self.server.server_port}', f'http://localhost:{self.server.server_port}')
         if not self.valid_host() or origin not in allowed or not secrets.compare_digest(self.headers.get('X-DriveSphere-Token', ''), TOKEN):
             return self.respond({'error':'Lokaler Zugriff erforderlich.'}, 403)
-        if PREVIEW:
+        if PREVIEW and self.path != '/api/prefs':
             return self.respond({'error':'Hardwarefunktionen sind in der Vorschau deaktiviert.'}, 409)
         try:
             length = int(self.headers.get('Content-Length', '0'))
@@ -474,7 +504,11 @@ class Handler(SimpleHTTPRequestHandler):
             data = json.loads(self.rfile.read(length))
             if not isinstance(data, dict):
                 raise ValueError('Ungültige Anfrage.')
-            if self.path == '/api/carplay':
+            if self.path == '/api/prefs':
+                with LOCK:
+                    save_prefs(valid_prefs(data))
+                message = ''
+            elif self.path == '/api/carplay':
                 args = carplay_command()
                 if not args:
                     raise ValueError('Bitte zuerst carplay_command in config.json einrichten.')

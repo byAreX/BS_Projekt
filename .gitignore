@@ -4,3 +4,5 @@ __pycache__/
 config.json
 artifacts/
 *.log
+prefs.json
+prefs.json.tmp

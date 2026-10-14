@@ -54,7 +54,7 @@ Am Pi prüfen: Kaltstart ohne sichtbaren Desktop, Touch im Menü und in LIVI, Ta
 python3 server.py
 ```
 
-Dann **http://127.0.0.1:8765** öffnen. Die Bootanimation läuft etwa 3,4 Sekunden und wechselt automatisch zum Startmenü. Sie hat keine Überspringen- oder Wiederholen-Taste. `Esc` führt aus Unterseiten zurück; Tastatur und Touch werden unterstützt. Die Vorschau verbindet keine Geräte und startet kein CarPlay. Nacht-/Tagansicht und Oberflächendimmung funktionieren und werden im Browser gespeichert.
+Dann **http://127.0.0.1:8765** öffnen. Die Bootanimation läuft etwa 3,4 Sekunden und wechselt automatisch zum Startmenü. Sie hat keine Überspringen- oder Wiederholen-Taste. `Esc` führt aus Unterseiten zurück; Tastatur und Touch werden unterstützt. Die Vorschau verbindet keine Geräte und startet kein CarPlay. Nacht-/Tagansicht und Oberflächendimmung funktionieren und werden gespeichert.
 
 Wenn macOS beim System-Python die Xcode-Lizenz verlangt, kann eine vorhandene Command-Line-Tools-Python-Installation verwendet werden:
 
@@ -78,7 +78,7 @@ Die Browseranimation dient nur der Vorschau ohne Plymouth. Auf dem Pi übernimmt
 
 ## Betrieb und Wartung
 
-DriveSphere läuft als normaler Desktopbenutzer und lauscht nur auf `127.0.0.1`. Schreibende API-Aufrufe prüfen Origin und ein Sitzungstoken. Die Oberfläche benötigt im Betrieb kein Internet. `config.json` bleibt bei erneuter Installation erhalten. Die App nutzt weder root für den Kiosk noch einen öffentlichen Webserver.
+DriveSphere läuft als normaler Desktopbenutzer und lauscht nur auf `127.0.0.1`. Schreibende API-Aufrufe prüfen Origin und ein Sitzungstoken. Die Oberfläche benötigt im Betrieb kein Internet. `config.json` bleibt bei erneuter Installation erhalten. Tag-/Nachtansicht und Dimmung speichert der Menüserver in `prefs.json` im Projektordner; die Datei wird sofort auf die Karte geschrieben, damit die Einstellungen auch nach einem Stromausfall ohne Herunterfahren erhalten bleiben. Die App nutzt weder root für den Kiosk noch einen öffentlichen Webserver.
 
 ## Bluetooth, Cardo und Musik
 
